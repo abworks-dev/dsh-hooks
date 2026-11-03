@@ -1,0 +1,3 @@
+- insert:
+  - id: abworks-generic-hooks
+    name: '@abworks/dsh-hooks'

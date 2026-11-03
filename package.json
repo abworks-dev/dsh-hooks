@@ -1,0 +1,26 @@
+{
+  "name": "@abworks/dsh-hooks",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "通用本地钩子管理：显式启停、事件规则、命令和有限运行记录",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "exports": { ".": "./index.js", "./client": "./client.js", "./icon": "./icon.svg", "./locale/*": "./locale/*.json", "./package.json": "./package.json" },
+  "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "hooks", "automation"],
+  "publishConfig": { "access": "public" },
+  "author": "abworks-dev",
+  "repository": { "type": "git", "url": "git+https://github.com/abworks-dev/dsh-hooks.git" },
+  "homepage": "https://github.com/abworks-dev/dsh-hooks#readme",
+  "bugs": { "url": "https://github.com/abworks-dev/dsh-hooks/issues" },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check index.js && node --check core.js && node --check rpc.js && node --check client.js",
+    "pack:release": "npm pack --ignore-scripts --pack-destination dist"
+  },
+  "files": ["index.js", "core.js", "rpc.js", "client.js", "cordis.patch.yml", "README.md", "SECURITY.md", "CHANGELOG.md", "docs/verification.md", "LICENSE", "icon.svg", "locale"],
+  "peerDependencies": { "@deepseek-ai/dsh-typert-protocol": "^0.2.1-rc.3", "zod": "^4.0.0" },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-renderer", "@deepseek-ai/dsh-client-connection", "@deepseek-ai/dsh-client-ui-settings"] }
+  }
+}
