@@ -17,6 +17,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      # Tests exercise dependency-free core and mock the DSH Host contracts.
+      # Install the locked TOML parser and peer dependencies; tests mock Host contracts.
+      - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run check
