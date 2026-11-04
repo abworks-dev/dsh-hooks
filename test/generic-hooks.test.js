@@ -5,13 +5,14 @@ import { createHookManager, parseRule, matches, runCommand, EVENTS } from '../co
 import { bindEvents } from '../index.js';
 import { mountRpc, descriptors } from '../rpc.js';
 const rule = (extra = {}) => ({ id: 'test', name: 'Test', event: 'PreToolUse', action: { type: 'command', executable: process.execPath, argv: [] }, ...extra });
-const manager = (options = {}) => createHookManager({ persist: async () => {}, ...options });
+const manager = async (options = {}) => { const m = createHookManager({ persist: async () => {}, fingerprint: async () => ({ digest: 'fixture', files: [] }), ...options }); for (const r of options.initial?.rules ?? []) { const p = await m.previewTrust(r.id); await m.trust(r.id, p.digest); if (r.enabled) await m.toggle(r.id, true); } return m; };
+const enable = async (m, id) => { const p = await m.previewTrust(id); await m.trust(id, p.digest); return m.toggle(id, true); };
 
 test('rules validate absolute native executables, bounded argv, safe globs and disabled default', () => {
   assert.equal(parseRule(rule()).enabled, false);
   for (const executable of ['node', 'relative.exe', process.platform === 'win32' ? 'C:\\test.cmd' : '/test.cmd']) assert.throws(() => parseRule(rule({ action: { type: 'command', executable } })));
   assert.throws(() => parseRule(rule({ matcher: '(a+)+$' })));
-  assert.throws(() => parseRule(rule({ action: { type: 'command', executable: process.execPath, timeoutMs: 99999 } })));
+  assert.throws(() => parseRule(rule({ action: { type: 'command', executable: process.execPath, timeoutMs: 600001 } })));
   assert.throws(() => parseRule(rule({ enabled: 'yes' })));
   assert.equal(matches('ops_*', 'ops_bash'), true);
   assert.equal(matches('ops_?', 'ops_bash'), false);
@@ -21,10 +22,10 @@ test('rules validate absolute native executables, bounded argv, safe globs and d
 
 test('CRUD persists atomically, defaults off, serializes updates and rolls back write failures', async () => {
   const writes = [];
-  const m = manager({ persist: async s => { writes.push(structuredClone(s)); if (s.enabled) throw Error('disk'); } });
+  const m = await manager({ persist: async s => { writes.push(structuredClone(s)); if (s.enabled) throw Error('disk'); } });
   await m.upsert(rule());
   assert.equal(m.snapshot().enabled, false);
-  await Promise.all([m.toggle('test', true), m.upsert(rule({ id: 'two' }))]);
+  await Promise.all([enable(m, 'test'), m.upsert(rule({ id: 'two' }))]);
   assert.equal(m.snapshot().rules.length, 2);
   await m.upsert(rule({ enabled: true, name: 'Edited' }));
   assert.equal(m.snapshot().rules.find(r => r.id === 'test').enabled, false);
@@ -32,24 +33,24 @@ test('CRUD persists atomically, defaults off, serializes updates and rolls back 
   assert.equal(m.snapshot().enabled, false);
   await m.remove('test');
   assert.equal(m.snapshot().rules.length, 1);
-  assert.equal(writes.length, 6);
+  assert.equal(writes.length, 7);
   m.dispose(); await assert.rejects(m.upsert(rule()), /disposed/);
 });
 
 test('dispatch uses metadata only; only PreToolUse exit 2 blocks; records bounded', async () => {
   const payloads = [];
-  const m = manager({ maxRecords: 2, execute: async (_a, payload) => { payloads.push(payload); return { status: 'completed', exitCode: 2, stdout: '', stderr: '' }; } });
+  const m = await manager({ maxRecords: 2, execute: async (_a, payload) => { payloads.push(payload); return { status: 'completed', exitCode: 2, stdout: '', stderr: '' }; } });
   await m.upsert(rule({ enabled: true }));
   assert.equal(m.snapshot().rules[0].enabled, false);
-  await m.toggle('test', true);
+  await enable(m, 'test');
   assert.equal(await m.dispatch('PreToolUse', { toolName: 'x' }), false);
   await m.configure({ enabled: true });
   assert.equal(await m.dispatch('PreToolUse', { sessionId: 's', toolName: 'x', arguments: { password: 'secret' }, body: 'private' }), true);
   assert.equal(JSON.stringify(payloads).includes('secret'), false);
   assert.deepEqual(Object.keys(payloads[0]).sort(), ['hook_event_name', 'payload_version', 'session_id', 'source', 'timestamp', 'tool_name']);
   await m.upsert(rule({ id: 'post', event: 'PostToolUse', enabled: true }));
-  await m.toggle('post', true);
-  assert.equal(await m.dispatch('PostToolUse'), false);
+  await enable(m, 'post');
+  assert.equal(await m.dispatch('PostToolUse'), true);
   await m.dispatch('PreToolUse');
   assert.equal(m.snapshot().records.length, 2);
   m.clearRecords(); assert.equal(m.snapshot().records.length, 0);
@@ -90,10 +91,12 @@ test('command limits output, observes cancellation, and cleans children without 
   const f = fakeSpawn({ output: 'x'.repeat(5000), hang: true });
   const limited = await runCommand(action, {}, { ...f, children });
   assert.equal(limited.status, 'output_limit'); assert.equal(Buffer.byteLength(limited.stdout), 4096);
-  assert.equal(f.calls[0].child.killed, true); assert.equal(children.size, 0);
+  assert.equal(f.calls[0].child.killed, true); assert.equal(children.size, 1);
+  f.calls[0].child.emit('close', null, 'SIGKILL'); assert.equal(children.size, 0);
   const abort = new AbortController(), hanging = fakeSpawn({ hang: true });
   const pending = runCommand(action, {}, { ...hanging, signal: abort.signal, children }); abort.abort();
-  assert.equal((await pending).status, 'cancelled'); assert.equal(children.size, 0);
+  assert.equal((await pending).status, 'cancelled'); assert.equal(children.size, 1);
+  hanging.calls[0].child.emit('close', null, 'SIGKILL'); assert.equal(children.size, 0);
   const pre = fakeSpawn(); await runCommand(action, {}, { ...pre, signal: abort.signal }); assert.equal(pre.calls.length, 0);
 });
 
@@ -106,12 +109,12 @@ test('timeouts and unload abort active work; pre-tool execution failures fail cl
   } finally { clearTimeout(keeper); }
   let started;
   const startedPromise = new Promise(resolve => { started = resolve; });
-  const m = manager({ initial: { enabled: true, rules: [rule({ enabled: true })] }, execute: async (_a, _p, { signal }) => {
+  const m = await manager({ initial: { enabled: true, rules: [rule({ enabled: true })] }, execute: async (_a, _p, { signal }) => {
     started(); return new Promise(resolve => signal.addEventListener('abort', () => resolve({ status: 'cancelled', exitCode: null }), { once: true }));
   } });
   const pending = m.dispatch('PreToolUse'); await startedPromise; m.dispose();
   assert.equal(await pending, true);
-  const failing = manager({ initial: { enabled: true, rules: [rule({ enabled: true })] }, execute: async () => { throw Error('fixture'); } });
+  const failing = await manager({ initial: { enabled: true, rules: [rule({ enabled: true })] }, execute: async () => { throw Error('fixture'); } });
   assert.equal(await failing.dispatch('PreToolUse'), true); failing.dispose();
 });
 
@@ -119,22 +122,25 @@ test('event binding preserves approval chain and actually gates before tool next
   const listeners = new Map(), calls = [];
   const ctx = { on: (name, fn) => { listeners.set(name, fn); return () => listeners.delete(name); } };
   let deny = true;
-  const off = bindEvents(ctx, { dispatch: async (event, metadata) => { calls.push({ event, metadata }); return deny; } });
+  const off = bindEvents(ctx, { dispatch: async (event, metadata) => { calls.push({ event, metadata }); return deny; }, dispatchDecision: async (event, metadata) => { calls.push({ event, metadata }); return { blocked: deny, reason: 'fixture denial' }; } });
   const signal = new AbortController().signal;
   assert.equal((await listeners.get('tools/pre-execute')({ name: 'tool', agent: { id: 's' }, arguments: { private: 1 }, signal }, () => { throw Error('must_not_dispatch'); })).kind, 'deny');
   deny = false;
   assert.deepEqual(await listeners.get('tools/pre-execute')({ name: 'tool', signal }, async () => ({ kind: 'ask' })), { kind: 'ask' });
   assert.equal(await listeners.get('approval/request')({ toolName: 'tool', agent: { id: 's' } }, async () => 'rejected'), 'rejected');
-  assert.deepEqual(calls[0].metadata, { sessionId: 's', toolName: 'tool' });
-  assert.equal(EVENTS.filter(e => e.blocking).length, 1);
+  assert.equal(calls[0].metadata.sessionId, 's');
+  assert.equal(calls[0].metadata.toolName, 'tool');
+  assert.equal(typeof calls[0].metadata.getToolInput, 'function');
+  assert.deepEqual(calls[0].metadata.getToolInput(), { private: 1 });
+  assert.equal(EVENTS.filter(e => e.blocking).length, 2);
   off(); assert.equal(listeners.size, 0);
 });
 
 test('every RPC requires the exact browser owner peer, including read/output access', async () => {
   const peer = { principal: { kind: 'owner' } }, services = {};
-  const ctx = { connection: { browserPeer: peer }, invocation: { peer }, typert: { register: c => { assert.equal(c.invocations.length, 6); return async () => {}; } } };
+  const ctx = { connection: { browserPeer: peer }, invocation: { peer }, typert: { register: c => { assert.equal(c.invocations.length, descriptors.length); return async () => {}; } } };
   class Remote { constructor(ctx, key) { this.ctx = ctx; services[key] = this; } }
-  const m = manager(); const release = mountRpc(ctx, m, Remote), rpc = services.genericHooks;
+  const m = await manager(); const release = mountRpc(ctx, m, Remote), rpc = services.genericHooks;
   assert.equal(rpc.snapshot().enabled, false);
   for (const deniedPeer of [undefined, { principal: { kind: 'owner' } }, { principal: { kind: 'remote' } }]) {
     ctx.invocation.peer = deniedPeer;

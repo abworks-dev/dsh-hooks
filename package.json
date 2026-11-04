@@ -1,26 +1,93 @@
 {
   "name": "@abworks/dsh-hooks",
-  "version": "0.1.0",
+  "version": "0.19.1",
   "type": "module",
-  "description": "通用本地钩子管理：显式启停、事件规则、命令和有限运行记录",
+  "description": "DSH 生命周期钩子：本地命令、正则匹配、文件指纹审阅、受限 Codex JSON 导入与工具前后反馈控制，不绕过审批",
   "license": "MIT",
-  "engines": { "node": ">=22" },
-  "exports": { ".": "./index.js", "./client": "./client.js", "./icon": "./icon.svg", "./locale/*": "./locale/*.json", "./package.json": "./package.json" },
-  "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "hooks", "automation"],
-  "publishConfig": { "access": "public" },
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./host": "./index.js",
+    "./client": "./client.js",
+    "./icon": "./icon.svg",
+    "./locale/*": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "hooks",
+    "automation"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "abworks-dev",
-  "repository": { "type": "git", "url": "git+https://github.com/abworks-dev/dsh-hooks.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abworks-dev/dsh-hooks.git"
+  },
   "homepage": "https://github.com/abworks-dev/dsh-hooks#readme",
-  "bugs": { "url": "https://github.com/abworks-dev/dsh-hooks/issues" },
+  "bugs": {
+    "url": "https://github.com/abworks-dev/dsh-hooks/issues"
+  },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check index.js && node --check core.js && node --check rpc.js && node --check client.js",
+    "check": "node --check index.js && node --check core.js && node --check async-queue.js && node --check rpc.js && node --check client.js && node --check matcher.js && node --check trust.js && node --check codex-import.js && node --check scope.js && node --check config-sources.js && node --check source-monitor.js && node --check source-registry.js && node --check source-poller.js && node --check toml-config.js && node --check toml-worker.js",
     "pack:release": "npm pack --ignore-scripts --pack-destination dist"
   },
-  "files": ["index.js", "core.js", "rpc.js", "client.js", "cordis.patch.yml", "README.md", "SECURITY.md", "CHANGELOG.md", "docs/verification.md", "LICENSE", "icon.svg", "locale"],
-  "peerDependencies": { "@deepseek-ai/dsh-typert-protocol": "^0.2.1-rc.3", "zod": "^4.0.0" },
+  "files": [
+    "index.js",
+    "core.js",
+    "async-queue.js",
+    "rpc.js",
+    "client.js",
+    "matcher.js",
+    "trust.js",
+    "codex-import.js",
+    "scope.js",
+    "config-sources.js",
+    "source-monitor.js",
+    "source-registry.js",
+    "source-poller.js",
+    "toml-config.js",
+    "toml-worker.js",
+    "cordis.patch.yml",
+    "README.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "docs/verification.md",
+    "docs/recipes.md",
+    "docs/codex-alignment.md",
+    "docs/upgrade-and-rollback.md",
+    "docs/host-contract-requests.md",
+    "examples",
+    "LICENSE",
+    "icon.svg",
+    "locale"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-typert-protocol": "^0.2.1-rc.3",
+    "zod": "^4.0.0"
+  },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
-    "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-renderer", "@deepseek-ai/dsh-client-connection", "@deepseek-ai/dsh-client-ui-settings"] }
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "dependencies": {
+    "@iarna/toml": "2.2.5"
   }
 }
