@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { parseRule, createHookManager } from '../core.js';
@@ -18,7 +18,7 @@ test('native bounds increase to 600 seconds without changing existing omitted de
 });
 
 test('file trust accepts the new bound, binds the timeout, and retains the prior default digest', async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'hooks-timeout-'));
+  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'hooks-timeout-')));
   try {
     const executable = path.join(directory, 'fixture');
     await writeFile(executable, 'not executed');

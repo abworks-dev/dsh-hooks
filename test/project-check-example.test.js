@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,11 +18,11 @@ function run(args, event) {
   });
 }
 test('project check executes explicit native argv in explicit cwd and records only outcome', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'hooks-check-'));
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), 'hooks-check-')));
   try {
     const fixture = path.join(dir, 'fixture.mjs');
     const log = path.join(dir, 'result.jsonl');
-    await writeFile(fixture, 'process.exit(process.cwd() === process.argv[2] ? Number(process.argv[3]) : 99)');
+    await writeFile(fixture, 'import { realpathSync } from "node:fs"; process.exit(realpathSync(process.cwd()) === realpathSync(process.argv[2]) ? Number(process.argv[3]) : 99)');
     for (const status of [0, 7]) {
       const result = await run([dir, log, process.execPath, fixture, dir, String(status)], { hook_event_name: 'Stop', content: 'PRIVATE', command: 'NEVER EXECUTE' });
       assert.equal(result.code, 0);
